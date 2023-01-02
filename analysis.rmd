@@ -1,0 +1,494 @@
+---
+title: "Project pt. 3"
+author: "Linh Hoang"
+date: '2022-12-20'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(car)
+```
+
+# Cleaning Data
+```{r}
+games <- read.csv("Video_Games_Sales_as_at_22_Dec_2016.csv", header=T)
+
+# Remove incomplete cases
+games <- na.omit(games)
+
+# Remove rows where User_Score is "tbd"
+games = filter(games, User_Score != "tbd")
+
+# Remove rows where Year_of_Release is "N/A"
+games = filter(games, Year_of_Release != "N/A")
+
+# Convert the values of Year_of_Release and User_Score to be numeric
+games$Year_of_Release <- as.numeric(games$Year_of_Release)
+games$User_Score <- as.numeric(games$User_Score)
+
+# Add 1e-5 to all values in numeric predictors
+games$NA_Sales<- games$NA_Sales + 1e-5
+games$EU_Sales<- games$EU_Sales + 1e-5
+games$JP_Sales<- games$JP_Sales + 1e-5
+games$Other_Sales<- games$Other_Sales + 1e-5
+games$NA_Sales<- games$NA_Sales + 1e-5
+games$Critic_Score <- games$Critic_Score + 1e-5
+games$User_Score <- games$User_Score + 1e-5
+
+# Change values of Platform that equals to '2600' to 'Atari 2600'
+games$Platform[games$Platform == '2600'] <- 'Atari 2600'
+summary(games)
+
+```
+
+# Divide into training and testing data
+```{r}
+# Set seed
+set.seed(1343)
+
+s <- sample(1:6894, 3447, replace=F)
+
+# assign to datasets
+train <- games[s, ]
+
+test <- games[-s,]
+
+# check to see if they're similar in distributions
+summary(train)
+summary(test)
+```
+
+# EDAs
+```{r}
+# Histogram of NA_Sales
+outlier_cutoff = quantile(train$NA_Sales,0.75) + 1.5 * IQR(games$NA_Sales)
+
+index_outlier_N = which(train$NA_Sales>outlier_cutoff)
+
+data_N = train[-index_outlier_N,]
+
+hist(data_N$NA_Sales, main="Histogram of NA_Sales", xlab="NA_Sales (millions)")
+
+# Histogram of EU_Sales
+outlier_cutoff = quantile(train$EU_Sales,0.75) + 1.5 * IQR(train$EU_Sales)
+
+index_outlier_E = which(train$EU_Sales>outlier_cutoff)
+
+data_E = train[-index_outlier_E,]
+
+hist(data_E$EU_Sales, main="Histogram of EU_Sales", xlab="EU_Sales (millions)")
+
+# Histogram of JP_Sales
+outlier_cutoff = quantile(train$JP_Sales,0.75) + 1.5 * IQR(train$JP_Sales)
+
+index_outlier_J = which(train$JP_Sales>outlier_cutoff)
+
+data_J = train[-index_outlier_J,]
+
+hist(data_J$JP_Sales, main="Histogram of JP_Sales", xlab="JP_Sales (millions)")
+
+# Histogram of Other_Sales
+outlier_cutoff = quantile(train$Other_Sales,0.75) + 1.5 * IQR(train$Other_Sales)
+
+index_outlier_O = which(train$Other_Sales>outlier_cutoff)
+
+data_O = train[-index_outlier_O,]
+
+hist(data_O$Other_Sales, main="Histogram of Other_Sales", xlab="Other_Sales (millions)")
+
+# Histogram of Critic_Score
+hist(train$Critic_Score, main="Histogram of Critic_Score", xlab="Critic_Score (Out of 100)")
+
+# Histogram of User_Score
+hist(train$User_Score, main="Histogram of User_Score", xlab="User_Score (Out of 10)")
+```
+
+```{r}
+# Barplot of Categorical Variables
+# Barplot for Platform
+counts <- table(train$Platform)
+barplot(counts, main="Number of Games Released Under a Platform", las = 2,
+   xlab="Platforms", ylab = "Number of Games")
+
+# Barplot for Year_Of_Release
+counts <- table(train$Year_of_Release)
+barplot(counts, main="Number of Games Released On a Year", las = 2,
+   xlab="Year", ylab = "Number of Games")
+
+# Barplot for Genre
+counts <- table(train$Genre)
+barplot(counts, main="Number of Games Released For a Genre", las = 2,
+   xlab="Genre", ylab = "Number of Games")
+
+# Barplot for Publisher
+counts <- table(train$Publisher)
+barplot(counts, main="Number of Games Released By a Publisher", las = 2, ylab = "Number of Games")
+
+# Barplot for Developer
+counts <- table(train$Developer)
+barplot(counts, main="Number of Games Creared By a Developer", las = 2, ylab = "Number of Games")
+```
+
+```{r}
+# Scatter Plots
+plot(train$NA_Sales ~ train$EU_Sales, xlab="EU Sales", ylab="NA Sales")
+
+plot(train$NA_Sales ~ train$JP_Sales, xlab="JP Sales", ylab="NA Sales")
+
+plot(train$NA_Sales ~ train$Other_Sales, xlab="Other Sales", ylab="NA Sales")
+
+plot(train$NA_Sales ~ train$Critic_Score, xlab="Critic Score", ylab="NA Sales")
+
+plot(train$NA_Sales ~ train$User_Score, xlab="User Score", ylab="NA Sales")
+```
+
+
+# Fit initial model, check assumptions
+```{r}
+# Fit model
+model1 <- lm(NA_Sales ~ Genre + User_Score + Critic_Score +
+               Platform + Publisher + Developer + EU_Sales +
+               JP_Sales + Other_Sales + Year_of_Release,
+             data=train)
+```
+
+```{r}
+# check condition 1
+fit <- model1$fitted.values
+plot(train$NA_Sales ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(train$NA_Sales ~ fit), lty=2)
+
+
+# check condition 2
+pairs(train[c(7, 8, 9, 10, 11, 13)])
+
+```
+Both conditions appear to hold. 
+
+# Check linear model assumptions
+```{r}
+par(mfrow=c(2,3))
+r <- model1$residuals
+plot(r ~ fit, xlab="Fitted", ylab="Residuals")
+plot(r ~ train[,7], xlab="EU_Sales", ylab="Residuals")
+plot(r ~ train[,8], xlab="JP_Sales", ylab="Residuals")
+plot(r ~ train[,9], xlab="Other_Sales", ylab="Residuals")
+plot(r ~ train[,11], xlab="Critic_Scores", ylab="Residuals")
+plot(r ~ train[,13], xlab="User_Scores", ylab="Residuals")
+qqnorm(r)
+qqline(r)
+```
+
+Fanning can be seen in half the residual graphs and there is some deviations from normality in the QQ plot. Constant variance and normality assumptions appear to be violated.
+
+# Transform data
+```{r}
+transform <- powerTransform(cbind(games[c(6, 7, 8,9, 11, 13)]))
+summary(transform)
+```
+
+Based on box cox, square root should be applied to all sales predictors except JP_Sales; JP_sales should have an inverse squared transformation and; Critic_Score and User_Score should have a square and cube transformation respectively.
+
+# Apply transformations
+```{r}
+# create transformed variables
+train$sqrtNa_Sales <- sqrt(train$NA_Sales)
+train$sqrtEU_Sales <- sqrt(train$EU_Sales)
+train$invJP_Sales <- 1/sqrt(train$JP_Sales)
+train$sqrtOther_Sales <- sqrt(train$Other_Sales)
+train$sqCritic_Score <- (train$Critic_Score)^2
+train$sqUser_Score <- (train$Critic_Score)^3
+
+# re-fit the model with new variables
+model2 <- lm(sqrtNa_Sales ~ Genre + sqUser_Score +
+               sqCritic_Score + Platform + Publisher +
+               Developer + sqrtEU_Sales + invJP_Sales +
+               sqrtOther_Sales + Year_of_Release,
+             data=train)
+
+# re-check all the conditions and assumptions
+# check condition 1
+fit <- model2$fitted.values
+plot(train$sqrtNa_Sales ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(train$sqrtNa_Sales ~ fit), lty=2)
+
+
+# check condition 2
+pairs(train[c(18, 19, 20, 21, 22)])
+
+# check assumptions
+par(mfrow=c(2,3))
+r <- model2$residuals
+plot(r ~ fit, xlab="Fitted", ylab="Residuals")
+plot(r ~ train[,18], xlab="sqrtEU_Sales", ylab="Residuals")
+plot(r ~ train[,19], xlab="invJP_Sales", ylab="Residuals")
+plot(r ~ train[,20], xlab="sqrtOther_Sales", ylab="Residuals")
+plot(r ~ train[,21], xlab="sqCritic_Score", ylab="Residuals")
+plot(r ~ train[,22], xlab="sqUser_Score", ylab="Residuals")
+qqnorm(r)
+qqline(r)
+```
+Transformation to response did not lead to normalization. Limitation of results found
+
+# ANOVA F test
+```{r}
+summary(model2)
+attributes(summary(model2))
+summary(model2)$r.squared
+```
+Model explains 85% of variation. Very small p-value and moderately large test statistic, thus there is a significant linear relationship between response and at least 1 predictor.
+
+From summary's t values, predictors found to not be significantly significant are: Genre, publisher, and developer
+
+# New model with significant t values
+```{r}
+# re-fit the model with smaller number of variables
+model3 <- lm(sqrtNa_Sales ~  sqUser_Score +
+               sqCritic_Score + Platform + sqrtEU_Sales +
+               invJP_Sales + sqrtOther_Sales + Year_of_Release,
+             data=train)
+
+# re-check all the conditions and assumptions
+# check condition 1
+fit <- model3$fitted.values
+plot(train$sqrtNa_Sales ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(train$sqrtNa_Sales ~ fit), lty=2)
+
+
+# check condition 2
+pairs(train[c(18, 19, 20, 21, 22)])
+
+par(mfrow=c(2,3))
+r <- model3$residuals
+plot(r ~ fit, xlab="Fitted", ylab="Residuals")
+plot(r ~ train[,18], xlab="sqrtEU_Sales", ylab="Residuals")
+plot(r ~ train[,19], xlab="invJP_Sales", ylab="Residuals")
+plot(r ~ train[,20], xlab="sqrtOther_Sales", ylab="Residuals")
+plot(r ~ train[,21], xlab="sqCritic_Score", ylab="Residuals")
+plot(r ~ train[,22], xlab="sqUser_Score", ylab="Residuals")
+qqnorm(r)
+qqline(r)
+```
+
+Once again, normality is violated.
+
+# Partial F test
+```{r}
+anova(model3, model2)
+```
+
+F statistic is smaller than expected, and Pr(>F) is greater than significance level. Thus we fail to reject the null hypothesis and accept model3.
+
+# Compute confidence intervals
+```{r}
+confint(model3, level=0.95)
+```
+invJP_Sales and a few platform categories are shown to include 0 within their intervals. New models made removing both variables and each variable should be made and compared to. 
+
+# New models and partial F test
+```{r}
+# re-fit the models with smaller number of variables
+model4 <- lm(sqrtNa_Sales ~  sqUser_Score +
+               sqCritic_Score  + sqrtEU_Sales +
+               sqrtOther_Sales + Year_of_Release,
+             data=train)
+model5 <- lm(sqrtNa_Sales ~  sqUser_Score +
+               sqCritic_Score + sqrtEU_Sales +
+               invJP_Sales + sqrtOther_Sales + Year_of_Release,
+             data=train)
+
+model6 <- lm(sqrtNa_Sales ~  sqUser_Score +
+               sqCritic_Score + Platform + sqrtEU_Sales  + sqrtOther_Sales + Year_of_Release,
+             data=train)
+# re-check all the conditions and assumptions
+# check condition 1
+fit <- model4$fitted.values
+plot(train$sqrtNa_Sales ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(train$sqrtNa_Sales ~ fit), lty=2)
+
+fit <- model5$fitted.values
+plot(train$sqrtNa_Sales ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(train$sqrtNa_Sales ~ fit), lty=2)
+
+fit <- model6$fitted.values
+plot(train$sqrtNa_Sales ~ fit)
+abline(a = 0, b = 1)
+lines(lowess(train$sqrtNa_Sales ~ fit), lty=2)
+
+# check condition 2
+pairs(train[c(18, 19, 20, 21, 22)])
+
+par(mfrow=c(2,3))
+r <- model4$residuals
+plot(r ~ fit, xlab="Fitted", ylab="Residuals")
+plot(r ~ train[,18], xlab="sqrtEU_Sales", ylab="Residuals")
+plot(r ~ train[,20], xlab="sqrtOther_Sales", ylab="Residuals")
+plot(r ~ train[,21], xlab="sqCritic_Score", ylab="Residuals")
+plot(r ~ train[,22], xlab="sqUser_Score", ylab="Residuals")
+qqnorm(r)
+qqline(r)
+
+par(mfrow=c(2,3))
+r <- model5$residuals
+plot(r ~ fit, xlab="Fitted", ylab="Residuals")
+plot(r ~ train[,18], xlab="sqrtEU_Sales", ylab="Residuals")
+plot(r ~ train[,20], xlab="sqrtOther_Sales", ylab="Residuals")
+plot(r ~ train[,21], xlab="sqCritic_Score", ylab="Residuals")
+plot(r ~ train[,22], xlab="sqUser_Score", ylab="Residuals")
+qqnorm(r)
+qqline(r)
+
+par(mfrow=c(2,3))
+r <- model6$residuals
+plot(r ~ fit, xlab="Fitted", ylab="Residuals")
+plot(r ~ train[,18], xlab="sqrtEU_Sales", ylab="Residuals")
+plot(r ~ train[,20], xlab="sqrtOther_Sales", ylab="Residuals")
+plot(r ~ train[,21], xlab="sqCritic_Score", ylab="Residuals")
+plot(r ~ train[,22], xlab="sqUser_Score", ylab="Residuals")
+qqnorm(r)
+qqline(r)
+```
+Normality violated still.
+
+```{r}
+anova(model4, model3)
+anova(model5, model3)
+anova(model6, model3)
+```
+
+Among all 3 new models, the model removing only invJP_Sales is the one that fails to reject the null hypothesis. Thus it is kept now instead.
+
+# Collinearity
+```{r}
+summary(model6)
+vif(model6)
+```
+Squaring GVIF, we find that all variables have severe multicollinearity, but the p values for all predictors are small. 
+
+# Identify influential points
+```{r}
+# values to use in cutoffs
+n <- nrow(train)
+p <- length(coef(model6))-1
+
+# define the cutoffs we will use
+Hcut <- 2*((p+1)/n)
+DFFITScut <- 2*sqrt((p+1)/n)
+DFBETAcut <- 2/sqrt(n)
+Dcut <- qf(0.5, p+1, n-p-1)
+
+# identify the leverage points
+h <- hatvalues(model6)
+which(h>Hcut)
+```
+
+```{r}
+# identify the outliers
+r <- rstandard(model6)
+which(r < -2 | r > 2)
+which(r < -4 | r > 4)
+
+```
+
+```{r}
+# identify influential points by Cook's distance
+D <- cooks.distance(model6)
+which(D > Dcut)
+
+```
+
+```{r}
+# identify influential points by DFFITS
+fits <- dffits(model6)
+which(abs(fits) > DFFITScut)
+```
+
+```{r}
+# identify influential points by DFBETAS
+betas <- dfbetas(model6)
+dim(betas)
+
+for(i in 1:10){
+  print(paste0("Beta ", i-1))
+  print(which(abs(betas[,i]) > DFBETAcut))
+}
+```
+
+366 leverage points were identified. 180 outliers were identified when the dataset was considered "small", while 29 outliers were identified when the dataset was considered "large". One observation was identified as being influential on the entire regression surface. 183 observations were identified as ones who influenced their own fitted values and between 32-172 observations being influential on at least one estimated coefficient.
+
+# Validation
+```{r}
+# so transform the test set data
+test$sqrtNa_Sales <- sqrt(test$NA_Sales)
+test$sqrtEU_Sales <- sqrt(test$EU_Sales)
+test$sqrtOther_Sales <- sqrt(test$Other_Sales)
+test$sqCritic_Score <- (test$Critic_Score)^2
+test$sqUser_Score <- (test$Critic_Score)^3
+
+# details from model6
+p1 <- length(coef(model6))-1
+n1 <- nrow(train)
+vif1 <- max(vif(model6))
+D1 <- length(which(cooks.distance(model6) > qf(0.5, p1+1,
+                                               n1-p1-1)))
+fits1 <- length(which(abs(dffits(model6)) > 2*sqrt((p1+1)/n1)))
+
+coefs1 <- round(summary(model6)$coefficients[,1], 3)
+ses1 <- round(summary(model6)$coefficients[,2], 3)
+
+# fit test dataset
+temp1test <- lm(sqrtNa_Sales ~  sqUser_Score + sqCritic_Score +
+                  Platform + sqrtEU_Sales  + sqrtOther_Sales +
+                  Year_of_Release, data=test)
+
+tp1 <- length(coef(temp1test))-1
+tn1 <- nrow(test)
+tvif1 <- max(vif(temp1test))
+tD1 <- length(which(cooks.distance(temp1test) > qf(0.5, tp1+1,
+                                                   tn1-tp1-1)))
+tfits1 <- length(which(abs(dffits(temp1test)) > 2*sqrt((tp1+1)/tn1)))
+
+tcoefs1 <- round(summary(temp1test)$coefficients[,1], 3)
+tses1 <- round(summary(temp1test)$coefficients[,2], 3)
+```
+
+```{r}
+pairs(train[,c(18 , 20, 21, 22)])
+plot(train$sqrtNa_Sales ~ fitted(model6), main="Y vs Fitted", xlab="Fitted", ylab="NA_Sales")
+lines(lowess(train$sqrtNa_Sales ~ fitted(model6)), lty=2)
+abline(a = 0, b = 1)
+
+par(mfrow=c(2,3))
+plot(rstandard(model6)~fitted(model6), xlab="fitted", ylab="Residuals")
+for(i in c(18 , 20, 21, 22)){
+  plot(rstandard(model6)~train[,i], xlab=names(train)[i], ylab="Residuals")
+}
+qqnorm(rstandard(model6))
+qqline(rstandard(model6))
+
+
+pairs(test[,c(18 ,19, 20, 21)])
+plot(test$sqrtNa_Sales ~ fitted(temp1test), main="Y vs Fitted", xlab="Fitted", ylab="NA_Sales")
+lines(lowess(test$sqrtNa_Sales ~ fitted(temp1test)), lty=2)
+abline(a = 0, b = 1)
+
+par(mfrow=c(2,3))
+plot(rstandard(temp1test)~fitted(temp1test), xlab="fitted", ylab="Residuals")
+for(i in c(18 ,19, 20, 21)){
+  plot(rstandard(temp1test)~test[,i], xlab=names(test)[i], ylab="Residuals")
+}
+qqnorm(rstandard(temp1test))
+qqline(rstandard(temp1test))
+```
+
+```{r}
+summary(model6)
+```
+
